@@ -1,0 +1,50 @@
+name: Windows smoke test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        python: ["3.10", "3.14"]
+    env:
+      PYTHONUTF8: "1"
+      MEDCLINIC_NO_BROWSER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test city search, website scan, and CSV export
+        run: python -m tests.smoke
+      - name: Launch the app through the Windows script
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "medclinic-launch.log"
+          $process = Start-Process -FilePath cmd.exe -ArgumentList '/d', '/c', 'Start-MedClinicFinder.cmd' -NoNewWindow -PassThru -RedirectStandardOutput $log
+          try {
+            $url = $null
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              $line = Get-Content $log -TotalCount 1 -ErrorAction SilentlyContinue
+              if ($line -match '(http://127\.0\.0\.1:\d+/)') {
+                $url = $Matches[1]
+                break
+              }
+              if ($process.HasExited) { break }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not $url) { throw "Launcher did not start the browser server." }
+            $page = Invoke-WebRequest -Uri $url -TimeoutSec 5
+            if ($page.Content -notmatch 'MedClinicFinder') { throw "Unexpected app page." }
+          } finally {
+            if (-not $process.HasExited) {
+              taskkill.exe /PID $process.Id /T /F
+            }
+          }

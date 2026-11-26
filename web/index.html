@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="local-token" content="__LOCAL_TOKEN__">
+  <title>MedClinicFinder</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <span class="brand"><span aria-hidden="true">✚</span> MedClinicFinder</span>
+      <h1>Find clinics<br>by location.</h1>
+      <p>Search a city for medical and dental clinics, then export their published contact details.</p>
+    </header>
+
+    <section class="card search" aria-labelledby="search-title">
+      <h2 id="search-title">Clinic search</h2>
+      <form id="lookup">
+        <label for="query">City and region</label>
+        <div class="lookup-row">
+          <input id="query" name="query" value="Calgary, Alberta" minlength="2" maxlength="140" required>
+          <button id="lookup-button" type="submit">Find location</button>
+        </div>
+      </form>
+      <form id="scan">
+        <div id="location-picker" hidden>
+          <label for="places">Search boundary</label>
+          <select id="places" required></select>
+        </div>
+        <fieldset>
+          <legend>Clinic types</legend>
+          <label><input type="checkbox" name="kind" value="Medical" checked> Medical</label>
+          <label><input type="checkbox" name="kind" value="Dental" checked> Dental</label>
+        </fieldset>
+        <button id="scan-button" type="submit" disabled>Find clinics and scan websites</button>
+      </form>
+      <p class="hint">Coverage depends on OpenStreetMap listings and the contact details clinics publish.</p>
+      <p id="search-message" class="message" role="status"></p>
+    </section>
+
+    <section id="results" class="card results" aria-labelledby="results-title" hidden>
+      <div class="results-head">
+        <div>
+          <h2 id="results-title">Results</h2>
+          <p id="status" role="status"></p>
+        </div>
+        <a id="download" class="button" href="/download.csv" download hidden>Download CSV</a>
+      </div>
+      <progress id="progress" aria-label="Website scan progress" hidden></progress>
+      <div id="tools" hidden>
+        <label for="filter">Filter results</label>
+        <input id="filter" type="search" placeholder="Search by clinic, type or address">
+        <p id="visible" class="hint"></p>
+      </div>
+      <div id="table-wrap" class="table-wrap" tabindex="0" aria-label="Clinic results" hidden>
+        <table>
+          <thead>
+            <tr><th scope="col">Clinic</th><th scope="col">Phone</th><th scope="col">Fax</th>
+              <th scope="col">Email</th><th scope="col">Website scan</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+    <footer>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a> · ODbL</footer>
+  </main>
+</body>
+</html>
