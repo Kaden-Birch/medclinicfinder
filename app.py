@@ -61,7 +61,10 @@ def scan_group(group, host, job):
 
 def run_scan(job, place, kinds):
     try:
-        rows = discover(place, kinds)
+        def report_attempt(attempt):
+            update(job, discovery_attempt=attempt)
+
+        rows = discover(place, kinds, report_attempt)
         groups = {}
         for row in rows:
             groups.setdefault(host_key(row["website"]), []).append(row)

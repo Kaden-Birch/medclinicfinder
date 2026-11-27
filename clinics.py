@@ -18,7 +18,10 @@ from urllib.robotparser import RobotFileParser
 USER_AGENT = "MedClinicFinder/1.0 (+https://github.com/Kaden-Birch/medclinicfinder)"
 ATTRIBUTION = "© OpenStreetMap contributors (ODbL): https://www.openstreetmap.org/copyright"
 NOMINATIM = os.environ.get("MEDCLINIC_NOMINATIM", "https://nominatim.openstreetmap.org")
-OVERPASS = os.environ.get("MEDCLINIC_OVERPASS", "https://overpass-api.de/api/interpreter")
+OVERPASS_SERVERS = (
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass-api.de/api/interpreter",
+)
 CACHE = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache") / "MedClinicFinder"
 LOOKUP_LOCK = threading.Lock()
 OSM_FIELDS = ("phone", "fax", "email")
@@ -144,22 +147,58 @@ def clinic_rows(elements, kinds, location):
     return sorted(rows, key=lambda row: (row["name"].casefold(), row["address"]))
 
 
-def discover(place, kinds):
+def discover(place, kinds, on_attempt=None):
     relation = int(place["id"])
-    # Include the area itself in the response so an unmapped boundary is distinguishable from zero clinics.
-    query = (
-        '[out:json][timeout:45];'
-        f'rel({relation});map_to_area->.city;.city out ids;'
-        '(nwr["amenity"~"^(clinic|doctors|dentist)$"](area.city);'
-        'nwr["healthcare"~"^(clinic|doctor|dentist)$"](area.city););out center;'
+    custom_server = os.environ.get("MEDCLINIC_OVERPASS", "").strip()
+    servers = (custom_server,) if custom_server else OVERPASS_SERVERS
+    amenity = []
+    healthcare = []
+    if "Medical" in kinds:
+        amenity.extend(("clinic", "doctors"))
+        healthcare.extend(("clinic", "doctor"))
+    if "Dental" in kinds:
+        amenity.append("dentist")
+        healthcare.append("dentist")
+    filters = "".join(
+        f'nwr["{key}"~"^({"|".join(tags)})$"](area.city);'
+        for key, tags in (("amenity", amenity), ("healthcare", healthcare))
     )
-    data = api_json(f"{OVERPASS}?{urlencode({'data': query})}", "Clinic discovery", 60)
-    if data.get("remark"):
-        raise SourceError("The map server returned incomplete results. Retry or select a smaller area.")
-    elements = data.get("elements", [])
-    if not any(item["type"] == "area" for item in elements):
-        raise SourceError("The map server has no searchable boundary for this place. Try a nearby municipality.")
-    return clinic_rows([item for item in elements if item["type"] != "area"], kinds, place["label"])
+    failures = []
+    missing_boundaries = 0
+    for attempt, endpoint in enumerate(servers, 1):
+        if on_attempt:
+            on_attempt(attempt)
+        # Leave time for the response after the map server's query deadline.
+        query_timeout = 45 if custom_server else 25
+        query = (
+            f'[out:json][timeout:{query_timeout}];'
+            f'rel({relation});map_to_area->.city;.city out ids;'
+            f'({filters});out center;'
+        )
+        parts = urlsplit(endpoint)
+        params = "&".join(filter(None, (parts.query, urlencode({"data": query}))))
+        url = urlunsplit(parts._replace(query=params))
+        try:
+            data = api_json(url, "Map server", query_timeout + 10)
+            if not isinstance(data, dict) or not isinstance(data.get("elements"), list) or data.get("remark"):
+                raise SourceError("The map server returned an incomplete response.")
+            elements = data["elements"]
+            if not any(item["type"] == "area" for item in elements):
+                missing_boundaries += 1
+                raise SourceError("The map server has no searchable boundary for this place.")
+        except SourceError as error:
+            failures.append(str(error))
+            continue
+        return clinic_rows([item for item in elements if item["type"] != "area"], kinds, place["label"])
+
+    if missing_boundaries == len(servers):
+        raise SourceError("No searchable boundary was found for this place. Try a nearby municipality.")
+    if custom_server:
+        raise SourceError(f"Clinic discovery failed on the configured map server. {failures[0]}")
+    raise SourceError(
+        "Clinic discovery couldn't get a complete response from either map server. "
+        "Try the search again later or choose a smaller area."
+    )
 
 
 def public_request(url, limit):

@@ -2,9 +2,12 @@ import csv
 from email.message import Message
 import io
 import json
+import os
 import threading
 import time
+from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
 from urllib.request import Request, urlopen
 
 import app
@@ -21,8 +24,28 @@ ELEMENTS = [
      "tags": {"amenity": "dentist", "name": "Élan Dental", "addr:housenumber": "4", "addr:street": "First Street"}},
     {"type": "node", "id": 3, "tags": {"healthcare": "doctor", "name": "=Medical", "contact:phone": "403-555-0110"}},
 ]
+PLACE = {"id": 42, "label": "Calgary, Alberta, Canada"}
+for failure in (clinics.SourceError("The read operation timed out"), {"elements": ELEMENTS, "remark": "timeout"}):
+    attempts = []
+    with patch.dict(os.environ, MEDCLINIC_OVERPASS=""), patch.object(
+        clinics, "api_json", side_effect=[failure, {"elements": ELEMENTS}]
+    ) as query_api:
+        results = clinics.discover(PLACE, {"Dental"}, attempts.append)
+    assert attempts == [1, 2]
+    assert [row["name"] for row in results] == ["Élan Dental"]
+    urls = [call.args[0] for call in query_api.call_args_list]
+    assert all(url.startswith(server + "?") for url, server in zip(urls, clinics.OVERPASS_SERVERS))
+    query = parse_qs(urlsplit(urls[-1]).query)["data"][0]
+    assert "dentist" in query and "doctors" not in query
+
+with patch.dict(os.environ, MEDCLINIC_OVERPASS=""), patch.object(
+    clinics, "api_json", return_value={"elements": [ELEMENTS[0]]}
+) as query_api:
+    assert clinics.discover(PLACE, {"Medical"}) == []
+    assert query_api.call_count == 1
+
 requests = []
-app.locations = lambda query: [{"id": 42, "label": "Calgary, Alberta, Canada"}]
+app.locations = lambda query: [PLACE]
 clinics.api_json = lambda url, source, timeout: {"elements": ELEMENTS}
 
 def fetch(url, limit):

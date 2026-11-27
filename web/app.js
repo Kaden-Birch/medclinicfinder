@@ -154,7 +154,9 @@ async function poll() {
     status.classList.toggle("error", job.phase === "error");
     if (job.phase === "discovering") {
       progress.removeAttribute("value");
-      status.textContent = `Finding matching clinics in ${job.place}…`;
+      status.textContent = job.discovery_attempt > 1
+        ? `Trying the backup map server for ${job.place}…`
+        : `Finding matching clinics in ${job.place}…`;
     } else if (job.phase === "scanning") {
       progress.max = job.total || 1;
       progress.value = job.completed;
